@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analýza propustnosti: LXC vs Docker (s dokumentací terminálu)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary: #1e293b;
+            --secondary: #3b82f6;
+            --accent: #10b981;
+            --warning: #f59e0b;
+            --bg: #f8fafc;
+            --text: #334155;
+            --code-bg: #0f172a;
+            --terminal-bg: #141414;
+            --terminal-text: #f1f1f1;
+        }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; line-height: 1.7; color: var(--text); background: var(--bg); margin: 0; }
+        header { background: var(--primary); color: white; padding: 4rem 2rem; text-align: center; border-bottom: 6px solid var(--secondary); }
+        header h1 { margin: 0; font-size: 2.5rem; }
+        header p { margin-top: 10px; font-size: 1.2rem; font-weight: 300; opacity: 0.9; }
+        
+        .container { max-width: 1100px; margin: -2rem auto 3rem; background: white; padding: 3rem; box-shadow: 0 10px 25px rgba(0,0,0,0.05); border-radius: 12px; position: relative; }
+        
+        h2 { color: var(--primary); border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; margin-top: 2.5rem; display: flex; align-items: center; }
+        h2 span.step-num { background: var(--secondary); color: white; border-radius: 50%; width: 35px; height: 35px; display: inline-flex; align-items: center; justify-content: center; font-size: 1.2rem; margin-right: 15px; font-family: sans-serif; }
+        
+        .info-box { background: #eff6ff; border-left: 4px solid var(--secondary); padding: 1rem 1.5rem; margin: 1.5rem 0; border-radius: 0 8px 8px 0; }
+        
+        .results-table { width: 100%; border-collapse: collapse; margin: 2rem 0; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .results-table th, .results-table td { border: 1px solid #e2e8f0; padding: 15px; text-align: left; }
+        .results-table th { background-color: var(--primary); color: white; font-weight: 500; text-transform: uppercase; font-size: 0.9rem; }
+        .results-table tr:nth-child(even) { background-color: #f8fafc; }
+        
+        .speed-badge { display: inline-block; padding: 5px 12px; border-radius: 6px; color: white; font-weight: bold; font-family: sans-serif; }
+        .speed-badge.iperf { background: var(--primary); }
+        .speed-badge.local { background: var(--accent); }
+        .speed-badge.nfs { background: var(--warning); }
+
+        .chart-container { position: relative; height: 400px; width: 100%; margin: 3rem 0; }
+        
+        /* Terminal Styling */
+        .terminal-block {
+            background-color: var(--terminal-bg);
+            color: var(--terminal-text);
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin: 1.5rem 0;
+            box-shadow: inset 0 2px 10px rgba(0,0,0,0.3);
+            overflow-x: auto;
+            white-space: pre-wrap;
+            position: relative;
+        }
+        .terminal-block::before {
+            content: "";
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            width: 12px;
+            height: 12px;
+            background-color: #ff5f56;
+            border-radius: 50%;
+            box-shadow: 20px 0 0 #ffbd2e, 40px 0 0 #27c93f;
+        }
+        .terminal-header {
+            color: #888;
+            border-bottom: 1px solid #333;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+            font-size: 0.85rem;
+            text-align: center;
+        }
+        .term-prompt { color: var(--accent); }
+        .term-cmd { color: var(--terminal-text); font-weight: bold; }
+        .term-output { color: #ccc; }
+        .term-important { color: var(--warning); font-weight: bold; }
+        .term-success { color: var(--accent); font-weight: bold; }
+
+        .analysis-box { background: #eef7fb; border-radius: 10px; padding: 2rem; border-left: 6px solid var(--secondary); margin: 2rem 0; }
+        
+        footer { text-align: center; padding: 3rem 1rem; color: #64748b; font-size: 0.9rem; background: #e2e8f0; margin-top: 3rem; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Benchmark propustnosti sítě v kontejnerech</h1>
+    <p>Komplexní nasazení LXC a Dockeru s dokumentací výsledků z terminálu</p>
+</header>
+
+<div class="container">
+    <h2> Architektura a topologie sítě</h2>
+    <p>Cílem projektu bylo kvantifikovat režii síťové virtualizace a protokolů (NFSv4 a FTP) při distribuci dat mezi kontejnery běžícími na stejném hostiteli (VM Ubuntu 22.04 LTS).</p>
+    <ul>
+        <li><strong>Backend (Docker):</strong> NFS Server (Alpine Linux) poskytující 800MB testovací soubor. IP 172.17.0.2 (docker0 bridge).</li>
+        <li><strong>Frontend (LXC):</strong> FTP Gateway (vsFTPd) čtoucí data z NFS. IP 10.99.99.98 (lxdbr0 bridge).</li>
+    </ul>
+
+    <h2><span class="step-num">1</span> Instalace a konfigurace backendu (Docker)</h2>
+    <div class="step">
+        <h3>Příprava dat</h3>
+        <p>Na hostitelském stroji vytvoříme sdílenou složku a vygenerujeme testovací soubor o velikosti 800 MB pomocí náhodných dat, abychom zamezili zkreslení výsledků kompresí na síťové vrstvě.</p>
+<pre>sudo mkdir -p /srv/nfs_share
+dd if=/dev/urandom of=/srv/nfs_share/test_800MB.bin bs=1M count=800</pre>
+    </div>
+
+    <div class="step">
+        <h3>Spuštění NFS serveru</h3>
+        <p>Spustíme Docker kontejner v privilegovaném režimu, který nasdílí připravenou složku přes protokol NFSv4 na výchozím portu 2049.</p>
+<pre>sudo docker run -d \
+  --name nfs-server \
+  --privileged \
+  -v /srv/nfs_share:/nfsshare \
+  -e SHARED_DIRECTORY=/nfsshare \
+  -p 2049:2049 \
+  itsthenetwork/nfs-server-alpine:latest</pre>
+    </div>
+
+    <h2><span class="step-num">2</span> Instalace a konfigurace frontendu (LXC)</h2>
+    <div class="step">
+        <h3>Inicializace LXD a spuštění kontejneru</h3>
+        <p>Při inicializaci LXD nastavíme velikost storage poolu rovnou na 5 GB, abychom zajistili dostatek místa pro systém a testovací soubory.</p>
+<pre>sudo lxd init
+lxc launch ubuntu:22.04 ftp-kontejner</pre>
+        <p>Povolení privilegovaného režimu pro NFS mount:</p>
+<pre>lxc stop ftp-kontejner
+lxc config set ftp-kontejner security.privileged true
+lxc config set ftp-kontejner raw.lxc "lxc.apparmor.profile=unconfined"
+lxc start ftp-kontejner</pre>
+    </div>
+
+    <div class="step">
+        <h3>Instalace služeb a připojení disku</h3>
+        <p>Vstoupíme do kontejneru, nainstalujeme potřebné služby a namountujeme NFS sdílení z IP adresy Docker bridge (<code>172.17.0.1</code>).</p>
+<pre>
+
+lxc exec ftp-kontejner -- bash
+apt update && apt install nfs-common vsftpd -y
+mkdir -p /mnt/nfs_remote
+mount -t nfs 172.17.0.1:/ /mnt/nfs_remote</pre>
+    </div>
+
+    <div class="step">
+        <h3>Konfigurace FTP serveru (vsftpd)</h3>
+        <p>Pro účely testování zprovozníme anonymní přístup. Pro zabezpečení (chroot jail) vsftpd vyžaduje, aby anonymní kořenová složka neměla práva k zápisu a neprobíhala kontrola PAM.</p>
+<pre># Otevřeme /etc/vsftpd.conf a nastavíme:
+listen=YES
+listen_ipv6=NO
+anonymous_enable=YES
+no_anon_password=YES
+anon_root=/mnt/nfs_remote
+check_shell=NO
+
+# Deaktivace PAM autentizace
+sed -i 's/^pam_service_name=vsftpd/#pam_service_name=vsftpd/' /etc/vsftpd.conf
+
+# Zabezpečení složky a restart
+chown root:root /mnt/nfs_remote
+chmod 555 /mnt/nfs_remote
+systemctl restart vsftpd</pre>
+    </div>
+    
+    <div class="info-box">
+        <strong>Konfigurace vsFTPd:</strong> Pro FTP přístup k NFS datům byl v <code>/etc/vsftpd.conf</code> nastaven <code>anon_root=/mnt/nfs_remote</code> a složka byla zabezpečena proti zápisu (chmod 555). PAM autentizace byla deaktivována.
+    </div>
+
+    <h2><span class="step-num">3</span> Měření a Dokumentace z Terminálu</h2>
+    <p>Testování bylo rozděleno na tři scénáře, aby byl jasně vidět úbytek výkonu způsobený jednotlivými vrstvami.</p>
+
+    <table class="results-table">
+        <thead>
+            <tr>
+                <th>Scénář testu</th>
+                <th>Cesta datového toku</th>
+                <th>Naměřená rychlost (Průměr)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>A. Čistá síť (iPerf3)</strong></td>
+                <td>Host RAM &rarr; Bridge &rarr; RAM LXC</td>
+                <td><span class="speed-badge iperf">44.3 Gbits/s</span></td>
+            </tr>
+            <tr>
+                <td><strong>B. Lokální FTP přenos</strong></td>
+                <td>LXC Disk &rarr; vsFTPd &rarr; Bridge &rarr; Hostitel</td>
+                <td><span class="speed-badge local">100.0 MB/s</span></td>
+            </tr>
+            <tr>
+                <td><strong>C. Distribuovaný přenos (NFS)</strong></td>
+                <td>Docker &rarr; NFS &rarr; Bridge &rarr; LXC &rarr; FTP &rarr; Hostitel</td>
+                <td><span class="speed-badge nfs">88.9 MB/s</span></td>
+            </tr>
+        </tbody>
+    </table>
+
+    
+
+    <h3>A. Ukázka čisté síťové propustnosti (iPerf3)</h3>
+    <p>Toto měření dokazuje, že virtuální mosty mezi kontejnery nejsou úzkým hrdlem systému.</p>
+    <div class="terminal-block">
+<div class="terminal-header">Dokumentace Testu A - iPerf3</div>
+<span class="term-prompt">student@studentvirtual045:~$</span> <span class="term-cmd">iperf3 -c 10.99.99.98</span>
+Connecting to host 10.99.99.98, port 5201
+[ 5] local 10.99.99.1 port 35918 connected to 10.99.99.98 port 5201
+[ ID] Interval       Transfer     Bitrate         Retr
+<span class="term-output">[ 5]  0.00-10.00 sec  51.6 GBytes  <span class="term-important">44.3 Gbits/sec</span>   0   sender</span>
+[ 5]  0.00-10.04 sec  51.6 GBytes  44.2 Gbits/sec       receiver
+
+iperf Done.</div>
+
+    <h3>B. Ukázka lokálního FTP přenosu (Baseline)</h3>
+    <p>Data byla stahována z lokálního disku LXC kontejneru. Slouží jako referenční hodnota.</p>
+    <div class="terminal-block">
+<div class="terminal-header">Dokumentace Testu B - wget FTP (Baseline)</div>
+<span class="term-prompt">student@studentvirtual045:~$</span> <span class="term-cmd">wget -O /dev/null ftp://10.99.99.98/test_local.bin</span>
+...
+Connecting to 10.99.99.98:21... connected.
+Logging in as anonymous ... <span class="term-success">Logged in!</span>
+...
+Length: 838860800 (800M)
+<span class="term-output">test_local.bin  100%[=====================>] 800.00M   109MB/s   in 8.0s</span>
+
+<span class="term-output">2026-04-12 23:26:58 <span class="term-important">(100 MB/s)</span> - ‘/dev/null’ saved [838860800]</span></div>
+
+    <h3>C. Ukázka distribuovaného přenosu přes NFS (NFS + FTP)</h3>
+    <p>Konečný test simulující modularitu. Data jsou čtena z NFS namontovaného disku a odesílána přes FTP.</p>
+    <div class="terminal-block">
+<div class="terminal-header">Dokumentace Testu C - wget FTP (NFSv4)</div>
+<span class="term-prompt">student@studentvirtual045:~$</span> <span class="term-cmd">wget -O /dev/null ftp://10.99.99.98/test_800MB.bin</span>
+...
+Connecting to 10.99.99.98:21... connected.
+Logging in as anonymous ... <span class="term-success">Logged in!</span>
+...
+Length: 838860800 (800M)
+<span class="term-output">test_800MB.bin  100%[=====================>] 800.00M   107MB/s   in 9.0s</span>
+
+<span class="term-output">2026-04-12 23:31:52 <span class="term-important">(88.9 MB/s)</span> - ‘/dev/null’ saved [838860800]</span></div>
+
+    <h2><span class="step-num">4</span> Závěr</h2>
+    <div class="analysis-box">
+        <p><strong>NFS Overhead:</strong> Srovnáním testu B (lokální disk, 100 MB/s) a testu C (NFS disk, 88.9 MB/s) jasně identifikujeme úbytek výkonu způsobený NFS vrstvou. Pokles představuje <strong>cca 11,1 %</strong> reálné propustnosti při započtení diskových operací.</p>
+        <p><strong>Závěr:</strong> Projekt úspěšně demonstroval, že kontejnerizace služeb (LXC a Docker) na stejném hostiteli je vysoce efektivní, pokud jsou virtuální sítě správně routovány. Distribuce dat přes NFS sice přináší měřitelný pokles propustnosti kvůli enkapsulaci paketů a přepínání kontextu mezi kontejnery, ale naměřených 89 MB/s je vynikající kompromis pro škálovatelnou mikroslužbovou architekturu.</p>
+    </div>
+</div>
+
+<footer>
+    Vypracoval: Student Virtual 045 | Projekt: Sítě a Kontejnerová virtualizace | 2026
+</footer>
+
+<script>
+    const ctx = document.getElementById('performanceChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: ['iPerf3 (přepočet na MB/s)', 'Lokální FTP přenos', 'NFS + FTP přenos'],
+            datasets: [{
+                label: 'Rychlost (MB/s)',
+                data: [5537, 100, 88.9],
+                backgroundColor: ['#1e293b', '#10b981', '#f59e0b'],
+                borderRadius: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    type: 'logarithmic',
+                    beginAtZero: false,
+                    title: { display: true, text: 'Rychlost v MB/s (Log stupnice)' },
+                    grid: { color: '#e2e8f0' }
+                },
+                x: { grid: { display: false } }
+            },
+            plugins: {
+                legend: { display: false },
+                title: { display: true, text: 'Srovnání propustnosti scénářů (Průměr)', font: { size: 16 } }
+            }
+        }
+    });
+</script>
+
+</body>
+</html>
