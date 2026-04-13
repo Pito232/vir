@@ -293,6 +293,73 @@ General statistics:
         <p>Testy potvrzují, že LXC kontejner dosahuje téměř <strong>nativního výkonu hostitele</strong>. Rozdíl v propustnosti paměti při použití 1M a 1K bloků (cca 70% pokles) je způsoben režií procesoru při častější alokaci adres a je identický na hostiteli i v kontejneru. Díky sdílenému jádru (kernel sharing) je režie virtualizace v oblasti CPU a RAM zanedbatelná (pod 1 %).</p>
     </div>
 </div>
+    <div class="container">
+    <h2><span class="step-num">7</span> Srovnání výkonu: Hostitel vs. LXC Kontejner</h2>
+    <p>Níže uvedená tabulka srovnává naměřené hodnoty <code>sysbench</code> na hostitelském systému a uvnitř LXC kontejneru. Výsledky potvrzují nativní rychlost kontejnerizace.</p>
+
+    <table class="results-table">
+        <thead>
+            <tr>
+                <th>Testovaná metrika</th>
+                <th>Hostitelský systém</th>
+                <th>LXC Kontejner</th>
+                <th>Režie (Ztráta)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>CPU (Events per second)</strong></td>
+                <td>3079.16</td>
+                <td>3093.69</td>
+                <td><span class="badge local">0 % (Nativní)</span></td>
+            </tr>
+            <tr>
+                <td><strong>RAM Propustnost (1M bloky)</strong></td>
+                <td>25 231.57 MiB/s</td>
+                <td>23 630.88 MiB/s</td>
+                <td>~ 6.3 %</td>
+            </tr>
+            <tr>
+                <td><strong>RAM Propustnost (1K bloky)</strong></td>
+                <td>7 541.14 MiB/s</td>
+                <td>7 072.21 MiB/s</td>
+                <td>~ 6.2 %</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="grid">
+        <div class="card">
+            <h3>Monitoring limitů (cgroups)</h3>
+            <p>Během testů byl v kontejneru aktivní limit <code>limits.memory=1GB</code>. Systém LXC tyto zdroje izoluje bez nutnosti emulace hardwaru, což vysvětluje minimální rozdíly ve výkonu oproti hostiteli.</p>
+        </div>
+    </div>
+
+    <h3>Dokumentace testů zevnitř kontejneru (root@ftp-kontejner)</h3>
+    
+    <div class="terminal-block">
+<div class="terminal-header">LXC: Test CPU (2 vlákna)</div>
+<span class="term-prompt">root@ftp-kontejner:~#</span> sysbench cpu --threads=2 run
+<span class="term-output">CPU speed:
+    <span class="term-important">events per second: 3093.69</span>
+Latency (avg): 0.65ms</span>
+    </div>
+
+    <div class="terminal-block">
+<div class="terminal-header">LXC: Test RAM (1M bloky)</div>
+<span class="term-prompt">root@ftp-kontejner:~#</span> sysbench memory --memory-block-size=1M --memory-total-size=100G run
+<span class="term-output">Total operations: 102400 (23630.88 per second)
+<span class="term-important">102400.00 MiB transferred (23630.88 MiB/sec)</span></span>
+    </div>
+
+    <div class="terminal-block">
+<div class="terminal-header">LXC: Test RAM (1K bloky)</div>
+<span class="term-prompt">root@ftp-kontejner:~#</span> sysbench memory --memory-block-size=1K --memory-total-size=100G run
+<span class="term-output">Total operations: 72428596 (7241948.13 per second)
+<span class="term-important">70731.05 MiB transferred (7072.21 MiB/sec)</span></span>
+    </div>
+</div>
+
 
     <h2><span class="step-num">5</span> Závěr</h2>
     <div class="analysis-box">
