@@ -240,7 +240,7 @@ Length: 838860800 (800M)
 
 <span class="term-output">2026-04-12 23:31:52 <span class="term-important">(88.9 MB/s)</span> - ‘/dev/null’ saved [838860800]</span></div>
 <div class="container">
-    <h2><span class="step-num"4</span> Testování výkonu CPU a paměti (Sysbench)</h2>
+    <h2><span class="step-num">4</span> Testování výkonu CPU a paměti (Sysbench)</h2>
     <p>Pro srovnání výkonu hostitelského systému a kontejneru byl použit nástroj <code>sysbench</code>. Testy byly zaměřeny na hrubý výpočetní výkon a propustnost operační paměti při různých velikostech bloků.</p>
 
     <div class="grid">
@@ -294,7 +294,7 @@ General statistics:
     </div>
 </div>
     <div class="container">
-    <h2><span class="step-num">7</span> Srovnání výkonu: Hostitel vs. LXC Kontejner</h2>
+    <h2><span class="step-num">5</span> Srovnání výkonu: Hostitel vs. LXC Kontejner</h2>
     <p>Níže uvedená tabulka srovnává naměřené hodnoty <code>sysbench</code> na hostitelském systému a uvnitř LXC kontejneru. Výsledky potvrzují nativní rychlost kontejnerizace.</p>
 
     <table class="results-table">
@@ -361,7 +361,7 @@ Latency (avg): 0.65ms</span>
 </div>
 
 
-    <h2><span class="step-num">5</span> Závěr</h2>
+    <h2><span class="step-num">6</span> Závěr</h2>
     <div class="analysis-box">
         <p><strong>NFS Overhead:</strong> Srovnáním testu B (lokální disk, 100 MB/s) a testu C (NFS disk, 88.9 MB/s) jasně identifikujeme úbytek výkonu způsobený NFS vrstvou. Pokles představuje <strong>cca 11,1 %</strong> reálné propustnosti při započtení diskových operací.</p>
         <p><strong>Závěr:</strong> Projekt úspěšně demonstroval, že kontejnerizace služeb (LXC a Docker) na stejném hostiteli je vysoce efektivní, pokud jsou virtuální sítě správně routovány. Distribuce dat přes NFS sice přináší měřitelný pokles propustnosti kvůli enkapsulaci paketů a přepínání kontextu mezi kontejnery, ale naměřených 89 MB/s je vynikající kompromis pro škálovatelnou mikroslužbovou architekturu.</p>
